@@ -1,0 +1,11 @@
+# Spark outputs / checkpoints
+data/alerts/
+data/checkpoints/
+data/processed/
+data/raw/
+data/reports/
+
+# Python
+.venv/
+__pycache__/
+*.pyc

@@ -1,11 +1,17 @@
+version: '3.8'
+
 services:
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
+    networks:
+      - ecommerce-network
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
@@ -17,77 +23,138 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-
-      # Listeners
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_INTERNAL://0.0.0.0:29092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_INTERNAL://kafka:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
-
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    networks:
+      - ecommerce-network
+
+  postgres:
+    image: postgres:15
+    container_name: airflow-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   spark-master:
     image: apache/spark:3.5.1
     container_name: spark-master
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+    command:
+      [
+        "/opt/spark/bin/spark-class",
+        "org.apache.spark.deploy.master.Master"
+      ]
     ports:
       - "8080:8080"
       - "7077:7077"
+      - "4040:4040"
     volumes:
       - ./data:/opt/airflow/data
+      - ./spark:/opt/airflow/spark
+    environment:
+      SPARK_MASTER_HOST: spark-master
+      SPARK_MASTER_PORT: 7077
+      SPARK_DRIVER_MEMORY: 2g
+      SPARK_EXECUTOR_MEMORY: 2g
+      SPARK_DRIVER_JAVA_OPTIONS: "-Dio.netty.tryReflectionSetAccessible=true"
+    networks:
+      - ecommerce-network
 
   spark-worker:
     image: apache/spark:3.5.1
     container_name: spark-worker
     depends_on:
       - spark-master
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    command:
+      [
+        "/opt/spark/bin/spark-class",
+        "org.apache.spark.deploy.worker.Worker",
+        "spark://spark-master:7077"
+      ]
     ports:
       - "8081:8081"
     volumes:
       - ./data:/opt/airflow/data
-
-  postgres:
-    image: postgres:15
-    container_name: airflow-postgres
+      - ./spark:/opt/airflow/spark
     environment:
-      - POSTGRES_USER=airflow
-      - POSTGRES_PASSWORD=airflow
-      - POSTGRES_DB=airflow
-    ports:
-      - "5432:5432"
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_DRIVER_JAVA_OPTIONS: "-Dio.netty.tryReflectionSetAccessible=true"
+    networks:
+      - ecommerce-network
 
   airflow-webserver:
     image: apache/airflow:2.8.1
     container_name: airflow-webserver
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
-      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
-      - AIRFLOW__CORE__FERNET_KEY=0Iv-rmE6U6_jzpSMzdmNMbBsss5XrG0wwOUsE5bWoPE=
-      - AIRFLOW__CORE__LOAD_EXAMPLES=False
-      - AIRFLOW__WEBSERVER__SECRET_KEY=super-long-shared-secret-here
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: 0Iv-rmE6U6_jzpSMzdmNMbBsss5XrG0wwOUsE5bWoPE=
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__WEBSERVER__SECRET_KEY: super-long-shared-secret-here
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./data:/opt/airflow/data
+      - ./spark:/opt/airflow/spark
+      - ./producers:/opt/airflow/producers
     ports:
       - "8082:8080"
-    command: webserver
+    command: >
+      bash -c "airflow db init &&
+               airflow users create --role Admin --username admin --email admin@admin.com --firstname admin --lastname admin --password admin 2>/dev/null || true &&
+               airflow webserver"
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   airflow-scheduler:
     image: apache/airflow:2.8.1
     container_name: airflow-scheduler
     depends_on:
-      - airflow-webserver
-      - postgres
+      airflow-webserver:
+        condition: service_healthy
     environment:
-      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
-      - AIRFLOW__CORE__FERNET_KEY=0Iv-rmE6U6_jzpSMzdmNMbBsss5XrG0wwOUsE5bWoPE=
-      - AIRFLOW__CORE__LOAD_EXAMPLES=False
-      - AIRFLOW__WEBSERVER__SECRET_KEY=super-long-shared-secret-here
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: 0Iv-rmE6U6_jzpSMzdmNMbBsss5XrG0wwOUsE5bWoPE=
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__WEBSERVER__SECRET_KEY: super-long-shared-secret-here
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./data:/opt/airflow/data
+      - ./spark:/opt/airflow/spark
+      - ./producers:/opt/airflow/producers
     command: scheduler
+    networks:
+      - ecommerce-network
+
+volumes:
+  postgres_data:
+
+networks:
+  ecommerce-network:
+    driver: bridge

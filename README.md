@@ -1,202 +1,360 @@
-# E‑Commerce Clickstream & Inventory Watch
+# E-Commerce Clickstream Pipeline
 
-End‑to‑end clickstream pipeline for **real‑time analytics** and **daily batch reporting** using **Kafka**, **Spark Structured Streaming**, and **Airflow**.
+An end-to-end Lambda architecture data pipeline for real-time clickstream processing and analytics in an online electronics store.
 
----
+## Project Overview
 
-## ✅ Features (Meets Scenario 3 Requirements)
+This project implements a scalable, fault-tolerant system to:
+- **Ingest** user clickstream events in real-time via Apache Kafka
+- **Process** streams with Apache Spark for immediate insights and alerts
+- **Orchestrate** batch analytics jobs with Apache Airflow
+- **Store** data in distributed file systems for analysis and reporting
 
-### **Producer**
-- Simulates clickstream events:
-  ```
-  { user_id, product_id, event_type, timestamp }
-  ```
-- Event types: `view`, `add_to_cart`, `purchase`
+### Business Objectives
 
-### **Real‑Time Stream Layer**
-- Kafka ingestion  
-- Spark streaming aggregation (sliding windows: **10 mins window / 5 mins slide**)  
-- Alert rule:
-  ```
-  views > 100 AND purchases < 5
-  ```
-  → outputs “high interest, low conversion” alerts
-
-### **Batch / Airflow Layer**
-- Daily User Segmentation:
-  - **Buyer** (user has a purchase)
-  - **Window Shopper** (no purchase)
-- Generates:
-  - `user_segments.csv`
-  - `user_segments_summary.txt`
-  - `top5_products.txt`
-- Conversion Reports:
-  - per product
-  - per **category**
+1. **Real-Time Alerts**: Detect high-interest products (>100 views, <5 purchases) and trigger flash sale recommendations
+2. **User Segmentation**: Classify users as Buyers, Cart Abandoners, or Window Shoppers
+3. **Conversion Analytics**: Calculate daily conversion rates by product category
+4. **Daily Reporting**: Generate top 5 most viewed products summary
 
 ---
 
-## 📦 Project Structure
+## Architecture
+
+### Technology Stack Justification
+
+| Component | Technology | Reason |
+|-----------|-----------|--------|
+| **Data Ingestion** | Apache Kafka | Scalable, fault-tolerant pub-sub system. Handles high-throughput event streams with partitioning for parallel processing. |
+| **Stream Processing** | Apache Spark Structured Streaming | Native support for watermarking, windowing, and stateful operations. Integrates seamlessly with batch workloads. |
+| **Orchestration** | Apache Airflow | DAG-based workflow management with task dependencies, retries, and monitoring. Perfect for daily batch jobs and reporting. |
+| **Storage** | HDFS/Parquet + PostgreSQL | Parquet provides columnar compression for analytics. Partitioning enables efficient batch querying. |
+| **Architecture** | Lambda (Batch + Speed) | Combines real-time stream processing with daily batch analytics for comprehensive insights. |
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     SPEED LAYER (Real-Time)                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│  Kafka Topic ──> Spark Structured Streaming                         │
+│  (clickstream)        │                                              │
+│                       ├──> Raw Events Sink (Parquet)                │
+│                       ├──> Aggregations (10-min windows)            │
+│                       └──> Alert Trigger (>100 views, <5 purchases) │
+│                                                                       │
+└─────────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                     BATCH LAYER (Daily Jobs)                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│  Airflow Scheduler                                                   │
+│  ├── Daily User Segmentation                                        │
+│  │   ├── Read raw parquet events                                    │
+│  │   ├── Classify users (Buyers, Cart Abandoners, Window Shoppers) │
+│  │   └── Generate top 5 products report                            │
+│  │                                                                   │
+│  └── Daily Conversion Report                                        │
+│      ├── Read streaming events                                      │
+│      ├── Aggregate by category                                      │
+│      └── Calculate conversion rates                                 │
+│                                                                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Project Structure
 
 ```
 ecommerce-clickstream-pipeline/
 ├── airflow/
 │   └── dags/
-│       └── daily_user_segmentation.py
-├── data/
-│   ├── raw/                 # raw clickstream parquet from Spark
-│   ├── processed/           # aggregated parquet from Spark
-│   ├── alerts/              # JSON alerts
-│   ├── reports/             # Airflow outputs
-│   └── product_catalog.csv  # product_id → category mapping
-├── producers/
-│   └── clickstream_producer.py
+│       ├── daily_user_segmentation.py    # User classification + top products
+│       └── daily_conversion_report.py    # Conversion rate analytics
+│
 ├── spark/
-│   └── stream_processor.py
-└��─ docker-compose.yml
+│   ├── stream_processor.py               # Real-time stream processing
+│   └── conversion_report.py              # Batch conversion analytics
+│
+├── producers/
+│   └── clickstream_producer.py           # Kafka event generator
+│
+├── data/
+│   ├── raw/                             # Raw streaming events
+│   ├── processed/                       # Aggregated metrics
+│   ├── alerts/                          # Real-time alerts
+│   ├── reports/                         # Daily reports
+│   ├── checkpoints/                     # Spark checkpoint metadata
+│   └── product_catalog.csv              # Product reference data
+│
+├── docker-compose.yml                   # Service orchestration
+├── requirements.txt                     # Python dependencies
+└── README.md                            # This file
 ```
 
 ---
 
-## ⚙️ Prerequisites
-- Docker + Docker Compose
-- Python 3.8+ (for running producer)
+## Getting Started
+
+### Prerequisites
+
+- Docker & Docker Compose
+- Git
+- 4GB+ available RAM
+
+### Setup Instructions
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/Sherio99/ecommerce-clickstream-pipeline.git
+   cd ecommerce-clickstream-pipeline
+   ```
+
+2. **Prepare product catalog** (if not present)
+   ```bash
+   mkdir -p data
+   # Ensure data/product_catalog.csv exists with columns: product_id, category
+   ```
+
+3. **Start all services**
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Verify services are running**
+   ```bash
+   docker-compose ps
+   ```
+
+   Expected output:
+   ```
+   zookeeper              running ✓
+   kafka                  running ✓
+   postgres               running ✓
+   spark-master           running ✓
+   spark-worker           running ✓
+   airflow-webserver      running ✓
+   airflow-scheduler      running ✓
+   ```
+
+5. **Access web interfaces**
+   - **Airflow DAG Dashboard**: http://localhost:8082
+     - Username: `admin`
+     - Password: `admin`
+   - **Spark Master UI**: http://localhost:8080
+   - **PostgreSQL**: `localhost:5432` (User: `airflow`, Password: `airflow`)
 
 ---
 
-## 🚀 Quick Start (From Scratch)
+## Running the Pipeline
 
-### 1) Start infrastructure
-```powershell
-docker-compose up -d zookeeper kafka postgres spark-master spark-worker
+### Step 1: Start the Kafka Producer
+
+```bash
+docker exec -it airflow-webserver bash
+cd /opt/airflow
+python -m pip install kafka-python pandas
+python -u /opt/airflow/producers/clickstream_producer.py
 ```
 
-### 2) Initialize Airflow DB
-```powershell
-docker-compose run --rm airflow-webserver airflow db init
+The producer will start generating clickstream events and sending them to Kafka.
+
+**Expected Output:**
+```
+2026-05-09 10:15:30,123 - INFO - ============================================================
+2026-05-09 10:15:30,123 - INFO - Clickstream Event Producer Starting
+2026-05-09 10:15:30,123 - INFO - ============================================================
+2026-05-09 10:15:31,456 - INFO - Producing clickstream events...
+{'user_id': 'U0045', 'product_id': 'P0001', 'category': 'Electronics', 'event_type': 'view', 'timestamp': '2026-05-09T10:15:31.789123+00:00'}
 ```
 
-### 3) Create Airflow admin user
-```powershell
-docker-compose run --rm airflow-webserver airflow users create `
-  --username admin --firstname Admin --lastname User `
-  --role Admin --email admin@example.com --password admin
+### Step 2: Start the Spark Stream Processor
+
+In a new terminal:
+
+```bash
+docker exec -it spark-master bash
+/opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --deploy-mode client \
+  /opt/airflow/spark/stream_processor.py
 ```
 
-### 4) Start Airflow
-```powershell
-docker-compose up -d airflow-webserver airflow-scheduler
+**Expected Output:**
+```
+============================================================
+All streams started successfully!
+============================================================
+Waiting for incoming data...
+Press Ctrl+C to stop the processor
 ```
 
-### 5) Create Kafka topic
-```powershell
-docker exec -it kafka /usr/bin/kafka-topics `
-  --create --topic clickstream-events `
-  --bootstrap-server kafka:9092 `
-  --partitions 3 --replication-factor 1
-```
+### Step 3: Trigger Airflow DAGs
 
-### 6) Start Producer
-```powershell
-python .\producers\clickstream_producer.py
-```
-
-### 7) Start Spark Stream
-```powershell
-docker cp .\spark\stream_processor.py spark-master:/tmp/stream_processor.py
-
-docker exec -it spark-master /opt/spark/bin/spark-submit `
-  --master spark://spark-master:7077 `
-  --conf "spark.driver.extraJavaOptions=-Divy.cache.dir=/tmp/ivy -Divy.home=/tmp/ivy" `
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1 `
-  /tmp/stream_processor.py
-```
-
-### 8) Run Airflow DAG
-Open:
-```
-http://localhost:8082
-```
-
-Login:
-- user: `admin`
-- pass: `admin`
-
-Then click **Trigger DAG** for `daily_user_segmentation`.
+1. Enable the DAGs in Airflow UI (http://localhost:8082)
+2. Manually trigger or wait for scheduled run:
+   - `daily_user_segmentation` runs daily at 00:00
+   - `daily_conversion_report` runs daily at 01:00
 
 ---
 
-## 📊 Outputs
+## Data Flow Examples
 
-### Spark Streaming
-- `data/raw/` → raw clickstream parquet
-- `data/processed/` → per‑product aggregates
-- `data/alerts/` → JSON alerts
+### Real-Time Alert Example
 
-### Airflow Reports
-- `data/reports/user_segments.csv`
-- `data/reports/user_segments_summary.txt`
-- `data/reports/conversion_report.csv`
-- `data/reports/category_conversion_report.csv`
-- `data/reports/top5_products.txt`
+When a product receives >100 views and <5 purchases within a 10-minute window:
 
----
-
-## ✅ User Segmentation Logic
-- **Buyer** → user has at least one `purchase`
-- **Window Shopper** → only `view/add_to_cart`
-
----
-
-## ✅ Category Conversion Logic
-Based on `data/product_catalog.csv`:
+**Alert Generated:**
 ```
-conversion_rate = total_purchases / total_views
+============================================================
+ALERT TRIGGERED (Batch ID: 0)
+============================================================
++----------+------------+-------+---------+--------+
+|product_id|    category| views|purchases|cart_add|
++----------+------------+-------+---------+--------+
+|    P0001 |  Electronics|  150  |    3    |  25    |
++----------+------------+-------+---------+--------+
+RECOMMENDATION: Launch a Flash Sale!
+============================================================
 ```
 
----
+### User Segmentation Example
 
-## 🛠 Troubleshooting
+**Input**: Raw clickstream events for a user
 
-### 403 log error in Airflow
-Ensure the same `AIRFLOW__WEBSERVER__SECRET_KEY` is set in **webserver + scheduler**.
-
-### Spark crash: `delta file does not exist`
-Your checkpoint was deleted or corrupted.
-Fix by stopping Spark and deleting checkpoints:
-
-```powershell
-rmdir .\data\checkpoints -Recurse -Force
-mkdir .\data\checkpoints
+```json
+[
+  {"user_id": "U0025", "event_type": "view"},
+  {"user_id": "U0025", "event_type": "view"},
+  {"user_id": "U0025", "event_type": "add_to_cart"},
+  {"user_id": "U0025", "event_type": "purchase"}
+]
 ```
 
-Then restart Spark stream.
+**Output**: `user_segments.csv`
 
-### Spark crash: OffsetOutOfRange
-Reset Kafka or checkpoints. Best clean reset:
+```
+user_id,segment
+U0025,Buyer
+```
 
-```powershell
-docker exec -it kafka /usr/bin/kafka-topics --delete --topic clickstream-events --bootstrap-server kafka:9092
-docker exec -it kafka /usr/bin/kafka-topics --create --topic clickstream-events --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1
+### Conversion Rate Report
+
+**Output**: `conversion_rate_report/`
+
+```
+category,views,purchases,cart_adds,conversion_rate,cart_to_purchase_rate
+Electronics,4523,156,892,0.0345,0.1748
+Fashion,3812,95,654,0.0249,0.1452
+Books,2105,203,456,0.0964,0.4451
 ```
 
 ---
 
-## ✅ Scenario Compliance Summary
+## Monitoring & Troubleshooting
 
-| Requirement | Status |
-|---|---|
-| Producer emits correct event format | ✅ |
-| Kafka ingestion | ✅ |
-| Sliding window views per product | ✅ |
-| High‑interest / low‑conversion alert | ✅ |
-| Airflow daily user segmentation | ✅ |
-| Window Shoppers vs Buyers | ✅ |
-| Top 5 most viewed report | ✅ |
-| Conversion rate per category | ✅ |
+### Common Issues
+
+**1. Kafka Connection Error**
+```
+Failed to connect to Kafka broker
+```
+**Solution**: Ensure Kafka service is running
+```bash
+docker-compose restart kafka zookeeper
+```
+
+**2. Spark Job Fails to Start**
+```
+Failed to connect to master
+```
+**Solution**: Check Spark master is accessible
+```bash
+docker logs spark-master
+```
+
+**3. Airflow DAGs Not Visible**
+```
+No DAGs found
+```
+**Solution**: Restart Airflow services and verify DAG files
+```bash
+docker-compose restart airflow-webserver airflow-scheduler
+docker-compose logs airflow-scheduler | grep -i dag
+```
+
+### Monitoring Queries
+
+Check Kafka topics:
+```bash
+docker exec kafka kafka-topics --list --bootstrap-server localhost:9092
+```
+
+Monitor Spark streaming:
+```bash
+docker logs spark-master -f
+```
+
+View Airflow task logs:
+```bash
+docker logs airflow-scheduler -f
+```
 
 ---
 
-## 🧩 Notes
-- Keep Spark streaming running while data is being produced.
-- Never delete checkpoints while Spark is running.
+## Performance Optimization
+
+### Tuning Parameters
+
+**Spark Streaming:**
+- Window size: 10 minutes (balance between latency and accuracy)
+- Slide interval: 5 minutes (50% overlap for continuous insights)
+- Watermark: 10 minutes (late data tolerance)
+
+**Airflow:**
+- Executor type: LocalExecutor (suitable for development)
+- Parallelism: 2 (adjust based on CPU cores)
+- DAG serialization: Default
+
+**Kafka:**
+- Partitions: 1 (increase for parallelism)
+- Replication factor: 1 (increase for HA)
+
+---
+
+## Future Enhancements
+
+1. **Real-Time Notifications**: Integrate with Slack/Email for alerts
+2. **Dashboard**: Grafana/Kibana for visualization
+3. **ML Pipeline**: Predictive pricing model based on demand
+4. **Scalability**: Deploy to Kubernetes with dynamic scaling
+5. **Data Warehouse**: Integrate with Snowflake/Redshift for BI
+6. **Testing**: Add unit tests and data quality checks
+7. **CI/CD**: GitHub Actions for automated testing and deployment
+
+---
+
+## Team & Contact
+
+**Project**: Applied Big Data Engineering - Mini Project Assessment
+**Date**: May 2026
+**Author**: Sherio99
+
+---
+
+## References
+
+- [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
+- [Apache Spark Structured Streaming](https://spark.apache.org/docs/latest/structured-streaming-programming-guide.html)
+- [Apache Airflow Documentation](https://airflow.apache.org/docs/)
+- [Lambda Architecture](https://lambda-architecture.net/)
+
+---
+
+## License
+
+Educational project - MIT License

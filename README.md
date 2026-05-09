@@ -59,6 +59,48 @@ This system simulates user activity on an e-commerce platform and processes it i
 ## 🏗 System Architecture
 
 ```
+                                +----------------------+
+                                |    APACHE KAFKA     |
+                                | Topic: clickstream  |
+                                | Partitions: 3       |
+                                +----------+-----------+
+                                           |
+                      +--------------------+--------------------+
+                      |                                         |
+                      v                                         v
+            
+            +----------------------+            +----------------------+
+            |    SPARK STREAM 1    |            |    SPARK STREAM 2    |
+            |      Raw Events      |            |     Aggregations     |
+            +----------------------+            +----------------------+
+                      |                                         |
+                      +--------------------+--------------------+
+                                           |
+                                           v
+            
+                                +----------------------+
+                                |    SPARK STREAM 3    |
+                                |  Alerts & Anomalies  |
+                                +----------+-----------+
+                                           |
+                                           v
+            
+                                +----------------------+
+                                |    STORAGE LAYER     |
+                                |    Parquet + CSV     |
+                                +----------+-----------+
+                                           |
+                                           v
+            
+                                +----------------------+
+                                |    APACHE AIRFLOW    |
+                                |    DAG Monitoring    |
+                                +----------------------+
+
+```
+# 🏗 DATA FLOW ARCHITECTURE
+
+```
 Event Generator
       ↓
 Kafka (clickstream-events)

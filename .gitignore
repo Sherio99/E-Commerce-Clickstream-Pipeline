@@ -1,11 +1,81 @@
-# Spark outputs / checkpoints
-data/alerts/
-data/checkpoints/
-data/processed/
+# =========================
+# PYTHON
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+*.log
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# =========================
+# AIRFLOW
+# =========================
+airflow/logs/
+airflow/*.pid
+airflow/*.err
+airflow/*.out
+
+# Airflow DB
+airflow/airflow.db
+
+# =========================
+# SPARK
+# =========================
+spark-warehouse/
+metastore_db/
+.derby/
+*.parquet
+*.orc
+
+# =========================
+# KAFKA / STREAMING DATA
+# =========================
 data/raw/
+data/processed/
+data/checkpoints/
+data/alerts/
 data/reports/
 
-# Python
-.venv/
-__pycache__/
-*.pyc
+# Streaming state / checkpoints
+checkpoints/
+state/
+
+# =========================
+# JUPYTER NOTEBOOK
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# IDE / EDITORS
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# OS FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# ENV FILES (SECURITY)
+# =========================
+.env
+*.env
+
+# =========================
+# DOCKER (optional logs)
+# =========================
+docker-compose.override.yml

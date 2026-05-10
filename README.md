@@ -271,9 +271,9 @@ MIT License
 
 ## 👨‍💻 Authors & Contributors
 
-EG/2020/3893 - Dias B.R.S.T 
-EG/2020/3909 - Dissanayaka R.P.L.M 
-EG/2020/3910 - Dissanayake D.K.R.C.K 
+- EG/2020/3893 - Dias B.R.S.T 
+- EG/2020/3909 - Dissanayaka R.P.L.M 
+- EG/2020/3910 - Dissanayake D.K.R.C.K 
 
 ---
 
